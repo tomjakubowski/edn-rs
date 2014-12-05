@@ -42,19 +42,20 @@ impl<T: Iterator<char>> Parser<T> {
     }
 
     fn consume_ws(&mut self) {
-        loop {
-            if self.is_eof() { break }
-            let ch = self.ch.unwrap();
-            // The EDN "spec" is very vague about what constitutes whitespace, but
-            // tools.reader.edn uses Java's Character.isWhitespace method which has
-            // identical semantics to Rust's char::is_whitespace method (*cough*
-            // hopefully).
-            // FIXME: verify that ^^^
-            if ch.is_whitespace() || ch == ',' {
-                self.bump();
-            } else {
-                break
-            }
+        while self.at_whitespace() {
+            self.bump();
+        }
+    }
+
+    fn at_whitespace(&self) -> bool {
+        // The EDN "spec" is very vague about what constitutes whitespace, but
+        // tools.reader.edn uses Java's Character.isWhitespace method which has
+        // identical semantics to Rust's char::is_whitespace method (*cough*
+        // hopefully).
+        // FIXME: verify that ^^^
+        match self.ch {
+            Some(ch) => ch.is_whitespace() || ch == ',',
+            None => false
         }
     }
 
@@ -131,6 +132,14 @@ impl<T: Iterator<char>> Parser<T> {
         Ok(Value::String(out))
     }
 
+    fn parse_char(&mut self) -> ParserResult {
+        self.bump();
+        if self.is_eof() || self.at_whitespace() {
+            return Ok(Value::Symbol(Ident { name: "\\".into_string(), prefix: None }))
+        }
+        unimplemented!()
+    }
+
     fn parse_symbol(&mut self) -> ParserResult {
         let ident = try!(self.parse_ident());
         if ident.prefix.is_none() {
@@ -152,10 +161,11 @@ impl<T: Iterator<char>> Parser<T> {
 
     pub fn parse_value(&mut self) -> ParserResult {
         self.consume_ws();
-
         if self.is_eof() { return Err(ParserError::Eof) }
+
         let ch = self.ch.unwrap();
         if ch == '"' { return self.parse_string() }
+        if ch == '\\' { return self.parse_char() }
         if self.at_symbol() { return self.parse_symbol() }
         if self.at_keyword() { return self.parse_keyword() }
 
@@ -234,6 +244,10 @@ mod test {
     }
 
     #[test]
+    fn test_parse_char() {
+    }
+
+    #[test]
     fn test_parse_symbol() {
         assert_val!("foo", Value::Symbol(Ident::simple("foo")));
         assert_val!("foo#", Value::Symbol(Ident::simple("foo#")));
@@ -243,6 +257,8 @@ mod test {
         assert_err!("foo/", ParserError::InvalidToken('/'));
         // FIXME: the parser doesn't handle this correctly right now
         // assert_err!("/bar", ParserError::InvalidToken('/'));
+
+        assert_val!(r#" \ "#, Value::Symbol(Ident::simple("\\")));
 
         // tools.reader.edn parses this as a symbol
         // assert_val!("ᛰ", Value::Symbol(Ident::simple("ᛰ")));
