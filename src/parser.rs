@@ -7,6 +7,8 @@ use {Ident, Value};
 pub enum ParserError {
     /// The parser reached the end of the input unexpectedly.
     Eof,
+    /// The parser read an unknown string escape
+    InvalidEscape,
     /// The parser found a token invalid for this position.
     InvalidToken(char)
 }
@@ -99,6 +101,36 @@ impl<T: Iterator<char>> Parser<T> {
         })
     }
 
+    fn parse_string_escape(&mut self) -> Result<char, ParserError> {
+        self.bump();
+        if self.is_eof() { return Err(ParserError::Eof) }
+        let ch = self.ch.unwrap();
+        match ch {
+            't' => Ok('\t'),
+            'r' => Ok('\r'),
+            'n' => Ok('\n'),
+            '\\' => Ok('\\'),
+            '"' => Ok('"'),
+            _ => Err(ParserError::InvalidEscape)
+        }
+    }
+
+    fn parse_string(&mut self) -> ParserResult {
+        let mut out = String::with_capacity(32);
+        loop {
+            self.bump();
+            if self.is_eof() { return Err(ParserError::Eof) }
+            let ch = self.ch.unwrap();
+            if ch == '"' { break }
+            if ch == '\\' {
+                out.push(try!(self.parse_string_escape()));
+                continue;
+            }
+            out.push(self.ch.unwrap())
+        }
+        Ok(Value::String(out))
+    }
+
     fn parse_symbol(&mut self) -> ParserResult {
         let ident = try!(self.parse_ident());
         if ident.prefix.is_none() {
@@ -122,6 +154,8 @@ impl<T: Iterator<char>> Parser<T> {
         self.consume_ws();
 
         if self.is_eof() { return Err(ParserError::Eof) }
+        let ch = self.ch.unwrap();
+        if ch == '"' { return self.parse_string() }
         if self.at_symbol() { return self.parse_symbol() }
         if self.at_keyword() { return self.parse_keyword() }
 
@@ -186,6 +220,17 @@ mod test {
         assert_val!("true", Value::Bool(true));
         assert_val!("false", Value::Bool(false));
         assert_val!("false,", Value::Bool(false));
+    }
+
+    #[test]
+    fn test_parse_str() {
+        assert_err!(r#" "foo "#, ParserError::Eof);
+        assert_val!(r#" "" "#, Value::String("".into_string()));
+        assert_val!(r#" "foo" "#, Value::String("foo".into_string()));
+        assert_val!(r#" "\n" "#, Value::String("\n".into_string()));
+        assert_val!(r#" "\"" "#, Value::String("\"".into_string()));
+        // multi-line
+        assert_val!(" \"foo\nbar\" ", Value::String("foo\nbar".into_string()));
     }
 
     #[test]
