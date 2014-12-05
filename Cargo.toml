@@ -1,0 +1,13 @@
+[package]
+
+name = "edn"
+version = "0.0.1"
+authors = ["Tom Jakubowski <tom@crystae.net>"]
+
+license = "MIT"
+readme = "README.markdown"
+keywords = ["encoding", "serialization"]
+repository = "https://github.com/tomjakubowski/edn-rs"
+description = """
+A Rust encoder and decoder of EDN, the Extensible Data Notation.
+"""
