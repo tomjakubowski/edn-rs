@@ -6,7 +6,9 @@ use {Ident, Value};
 /// Possible errors encountered when parsing EDN.
 pub enum ParserError {
     /// The parser reached the end of the input unexpectedly.
-    Eof
+    Eof,
+    /// The parser found a token invalid for this position.
+    InvalidToken(char)
 }
 
 impl Error for ParserError {
@@ -69,6 +71,12 @@ impl<T: Iterator<char>> Parser<T> {
     fn parse_ident(&mut self) -> Result<Ident, ParserError> {
         if self.is_eof() { return Err(ParserError::Eof) }
         let mut ident = String::with_capacity(16);
+        let ch = self.ch.unwrap();
+        // It's important that parse_symbol maintains the symbol starting character
+        // restrictions itself, because parse_ident is also needed for parsing
+        // keywords (which don't have those restrictions).
+        if !is_ident_ch(ch) { return Err(ParserError::InvalidToken(ch)) }
+
         loop {
             if self.is_eof() { break; }
             let ch = self.ch.unwrap();
@@ -137,6 +145,11 @@ mod test {
     }
 
     macro_rules! assert_err {
+        ($str:expr) => ({
+            let inp = $str.into_string();
+            let mut parser = Parser::new(inp.chars());
+            assert!(parser.parse_value().is_err())
+        });
         ($str:expr, $val:expr) => ({
             let inp = $str.into_string();
             let mut parser = Parser::new(inp.chars());
@@ -170,11 +183,17 @@ mod test {
         assert_val!("foo#", Value::Symbol(Ident::simple("foo#")));
         assert_val!("foo9", Value::Symbol(Ident::simple("foo9")));
         assert_val!("-foo", Value::Symbol(Ident::simple("-foo")));
+        // tools.reader.edn parses this as a symbol
         // assert_val!("ᛰ", Value::Symbol(Ident::simple("ᛰ")));
     }
 
     #[test]
     fn test_parse_keyword() {
+        assert_err!(":", ParserError::Eof);
+        assert_err!(": foo", ParserError::InvalidToken(' '));
         assert_val!(":foo", Value::Keyword(Ident::simple("foo")));
+        assert_val!(":-foo", Value::Keyword(Ident::simple("-foo")));
+        assert_val!(":1234", Value::Keyword(Ident::simple("1234")));
+        assert_val!(":12aaa", Value::Keyword(Ident::simple("12aaa")));
     }
 }
