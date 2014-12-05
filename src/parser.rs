@@ -40,20 +40,20 @@ impl<T: Iterator<char>> Parser<T> {
     }
 
     fn consume_ws(&mut self) {
-        while self.at_whitespace() {
-            self.bump();
+        loop {
+            if self.is_eof() { break }
+            let ch = self.ch.unwrap();
+            // The EDN "spec" is very vague about what constitutes whitespace, but
+            // tools.reader.edn uses Java's Character.isWhitespace method which has
+            // identical semantics to Rust's char::is_whitespace method (*cough*
+            // hopefully).
+            // FIXME: verify that ^^^
+            if ch.is_whitespace() || ch == ',' {
+                self.bump();
+            } else {
+                break
+            }
         }
-    }
-
-    fn at_whitespace(&self) -> bool {
-        // The EDN "spec" is very vague about what constitutes whitespace, but
-        // tools.reader.edn uses Java's Character.isWhitespace method which has
-        // identical semantics to Rust's char::is_whitespace method (*cough*
-        // hopefully).
-        // FIXME: verify that ^^^
-        if self.is_eof() { return false }
-        let ch = self.ch.unwrap();
-        ch.is_whitespace() || ch == ','
     }
 
     fn at_symbol(&self) -> bool {
@@ -70,9 +70,11 @@ impl<T: Iterator<char>> Parser<T> {
 
     fn parse_ident(&mut self) -> Result<Ident, ParserError> {
         if self.is_eof() { return Err(ParserError::Eof) }
+
         let mut ident = String::with_capacity(16);
+        let mut prefix = None;
         let ch = self.ch.unwrap();
-        // It's important that parse_symbol maintains the symbol starting character
+        // It's important that parse_symbol respects the symbol starting character
         // restrictions itself, because parse_ident is also needed for parsing
         // keywords (which don't have those restrictions).
         if !is_ident_ch(ch) { return Err(ParserError::InvalidToken(ch)) }
@@ -80,12 +82,21 @@ impl<T: Iterator<char>> Parser<T> {
         loop {
             if self.is_eof() { break; }
             let ch = self.ch.unwrap();
+            if ch == '/' {
+                prefix = Some(ident);
+                ident = String::with_capacity(16);
+                self.bump();
+                continue;
+            }
             if !is_ident_ch(ch) { break; }
             ident.push(self.ch.unwrap());
             self.bump();
         }
-        // FIXME: handle prefixed idents
-        Ok(Ident::simple(ident))
+        if ident.len() == 0 { return Err(ParserError::InvalidToken('/')) }
+        Ok(Ident {
+            name: ident,
+            prefix: prefix
+        })
     }
 
     fn parse_symbol(&mut self) -> ParserResult {
@@ -183,6 +194,11 @@ mod test {
         assert_val!("foo#", Value::Symbol(Ident::simple("foo#")));
         assert_val!("foo9", Value::Symbol(Ident::simple("foo9")));
         assert_val!("-foo", Value::Symbol(Ident::simple("-foo")));
+        assert_val!("foo/bar", Value::Symbol(Ident::prefixed("bar", "foo")));
+        assert_err!("foo/", ParserError::InvalidToken('/'));
+        // FIXME: the parser doesn't handle this correctly right now
+        // assert_err!("/bar", ParserError::InvalidToken('/'));
+
         // tools.reader.edn parses this as a symbol
         // assert_val!("ᛰ", Value::Symbol(Ident::simple("ᛰ")));
     }

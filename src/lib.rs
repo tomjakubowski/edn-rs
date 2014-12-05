@@ -29,12 +29,19 @@ pub struct Ident {
     pub prefix: Option<String>
 }
 
+#[cfg(test)]
 impl Ident {
-    // This is used internally for testing convenience.
-    fn simple<S: StrAllocating>(name: S) -> Ident {
+    fn simple(name: &str) -> Ident {
         Ident {
             name: name.into_string(),
             prefix: None
+        }
+    }
+
+    fn prefixed(name: &str, prefix: &str) -> Ident {
+        Ident {
+            name: name.into_string(),
+            prefix: Some(prefix.into_string())
         }
     }
 }
