@@ -17,6 +17,7 @@ impl Error for ParserError {
     fn description(&self) -> &str { "EDN parser error" }
 }
 
+/// Convenient type alias for results of parsing.
 pub type ParserResult = Result<Value, ParserError>;
 
 pub struct Parser<T: Iterator<char>> {

@@ -1,4 +1,4 @@
-#![feature(globs, if_let, macro_rules, while_let)]
+#![feature(globs, macro_rules)]
 #![deny(dead_code)]
 #![warn(missing_docs)]
 
