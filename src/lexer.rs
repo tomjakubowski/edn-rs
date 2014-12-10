@@ -23,6 +23,7 @@ pub enum Token {
     RSquare,
     Slash,
     Space,
+    Colon,
     Name(String),
     String(String),
 }
@@ -40,6 +41,14 @@ impl Token {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn is_name(&self) -> bool {
+        match *self {
+            Token::Name(_) => true,
+            _ => false
+        }
+    }
+
     pub fn human_readable(&self) -> &'static str {
         match *self {
             Token::LCurly => "`{`",
@@ -49,6 +58,7 @@ impl Token {
             Token::LSquare => "`[`",
             Token::RSquare => "`]`",
             Token::Slash => "`/`",
+            Token::Colon => "`:`",
             Token::Space => "<whitespace>",
             Token::Name(_) => "identifier",
             Token::String(_) => "string"
@@ -215,7 +225,7 @@ impl<T: Iterator<char>> Lexer<T> {
         }
 
         if invalid {
-            panic!("invalid token: {}", val)
+            panic!("invalid token: {}", val) // FIXME
         } else {
             Some(Token::Name(val))
         }
@@ -229,7 +239,10 @@ impl<T: Iterator<char>> Iterator<Token> for Lexer<T> {
         if is_whitespace(ch) {
             self.skip_spaces();
             Some(Token::Space)
-        } else if is_delim(ch) {
+        } else if ch == ':' {
+            self.bump();
+            Some(Token::Colon)
+        }else if is_delim(ch) {
             self.bump();
             Some(Token::delim(ch))
         } else if is_name_start1(ch) {
