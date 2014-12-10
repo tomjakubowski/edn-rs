@@ -41,6 +41,28 @@ impl Token {
             _ => unreachable!()
         }
     }
+
+    pub fn is_name(&self) -> bool {
+        match *self {
+            Token::Name(_) => true,
+            _ => false
+        }
+    }
+
+    pub fn human_readable(&self) -> &'static str {
+        match *self {
+            Token::LCurly => "`{`",
+            Token::RCurly => "`}`",
+            Token::LParen => "`(`",
+            Token::RParen => "`)`",
+            Token::LSquare => "`[`",
+            Token::RSquare => "`]`",
+            Token::Slash => "`/`",
+            Token::Space => "<whitespace>",
+            Token::Name(_) => "identifier",
+            Token::String(_) => "string"
+        }
+    }
 }
 
 fn is_whitespace(ch: char) -> bool {

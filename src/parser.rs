@@ -1,16 +1,23 @@
+#![allow(dead_code)]
+
 use std::error::Error;
 
 use {Ident, Value};
+use lexer::{Lexer, Token};
+
+macro_rules! one_of {
+    ($x:expr: $($val:expr),+) => {
+        $($x == $val)||+
+    };
+}
 
 #[deriving(PartialEq, Show)]
 /// Possible errors encountered when parsing EDN.
 pub enum ParserError {
     /// The parser reached the end of the input unexpectedly.
     Eof,
-    /// The parser read an unknown string escape
-    InvalidEscape,
-    /// The parser found a token invalid for this position.
-    InvalidToken(char)
+    /// The parser read an unexpected token
+    UnexpectedToken { expected: &'static str, found: &'static str }
 }
 
 impl Error for ParserError {
@@ -21,170 +28,122 @@ impl Error for ParserError {
 pub type ParserResult = Result<Value, ParserError>;
 
 pub struct Parser<T: Iterator<char>> {
-    inp: T,
-    ch: Option<char>
+    lex: Lexer<T>,
+    tok: Option<Token>
 }
 
 impl<T: Iterator<char>> Parser<T> {
-    pub fn new(mut inp: T) -> Parser<T> {
-        let ch = inp.next();
+    pub fn new(inp: T) -> Parser<T> {
+        let mut lexer = Lexer::new(inp);
+        let tok = lexer.next();
         Parser {
-            inp: inp,
-            ch: ch
+            lex: lexer,
+            tok: tok
         }
     }
 
     fn is_eof(&self) -> bool {
-        self.ch.is_none()
+        self.tok.is_none()
     }
 
+    /// Advance the parser one token.
     fn bump(&mut self) {
-        self.ch = self.inp.next()
+        self.tok = self.lex.next()
     }
 
-    fn consume_ws(&mut self) {
-        while self.at_whitespace() {
-            self.bump();
+    /// Advance the parser one token, returning the token on the stream before the bump.
+    fn get_and_bump(&mut self) -> Option<Token> {
+        let tok = self.tok.take();
+        self.bump();
+        tok
+    }
+
+    /// If the token `token` is available, consume it and return true.  Otherwise,
+    /// returns false.
+    fn eat(&mut self, token: &Token) -> bool {
+        match self.tok {
+            Some(ref tok) => token == tok,
+            _ => false
         }
     }
 
-    fn at_whitespace(&self) -> bool {
-        // The EDN "spec" is very vague about what constitutes whitespace, but
-        // tools.reader.edn uses Java's Character.isWhitespace method which has
-        // identical semantics to Rust's char::is_whitespace method (*cough*
-        // hopefully).
-        // FIXME: verify that ^^^
-        match self.ch {
-            Some(ch) => ch.is_whitespace() || ch == ',',
-            None => false
+    fn at_space(&self) -> bool {
+        match self.tok {
+            Some(Token::Space) => true,
+            _ => false
+        }
+    }
+
+    fn at_string(&self) -> bool {
+        match self.tok {
+            Some(Token::String(_)) => true,
+            _ => false
         }
     }
 
     fn at_symbol(&self) -> bool {
-        if let Some(ch) = self.ch {
-            is_ident_start_ch(ch)
-        } else {
-            false
-        }
-    }
-
-    fn at_keyword(&self) -> bool {
-        if let Some(':') = self.ch { true } else { false }
-    }
-
-    fn parse_ident(&mut self) -> Result<Ident, ParserError> {
-        if self.is_eof() { return Err(ParserError::Eof) }
-
-        let mut ident = String::with_capacity(16);
-        let mut prefix = None;
-        let ch = self.ch.unwrap();
-        // It's important that parse_symbol respects the symbol starting character
-        // restrictions itself, because parse_ident is also needed for parsing
-        // keywords (which don't have those restrictions).
-        if !is_ident_ch(ch) { return Err(ParserError::InvalidToken(ch)) }
-
-        loop {
-            if self.is_eof() { break; }
-            let ch = self.ch.unwrap();
-            if ch == '/' {
-                prefix = Some(ident);
-                ident = String::with_capacity(16);
-                self.bump();
-                continue;
-            }
-            if !is_ident_ch(ch) { break; }
-            ident.push(self.ch.unwrap());
-            self.bump();
-        }
-        if ident.len() == 0 { return Err(ParserError::InvalidToken('/')) }
-        Ok(Ident {
-            name: ident,
-            prefix: prefix
-        })
-    }
-
-    fn parse_string_escape(&mut self) -> Result<char, ParserError> {
-        self.bump();
-        if self.is_eof() { return Err(ParserError::Eof) }
-        let ch = self.ch.unwrap();
-        match ch {
-            't' => Ok('\t'),
-            'r' => Ok('\r'),
-            'n' => Ok('\n'),
-            '\\' => Ok('\\'),
-            '"' => Ok('"'),
-            _ => Err(ParserError::InvalidEscape)
+        match self.tok {
+            Some(Token::Name(_)) => true,
+            _ => false
         }
     }
 
     fn parse_string(&mut self) -> ParserResult {
-        let mut out = String::with_capacity(32);
-        loop {
-            self.bump();
-            if self.is_eof() { return Err(ParserError::Eof) }
-            let ch = self.ch.unwrap();
-            if ch == '"' { break }
-            if ch == '\\' {
-                out.push(try!(self.parse_string_escape()));
-                continue;
-            }
-            out.push(self.ch.unwrap())
+        let s = self.get_and_bump().unwrap();
+        match s {
+            Token::String(s) => Ok(Value::String(s)),
+            _ => panic!("logic error")
         }
-        Ok(Value::String(out))
-    }
-
-    fn parse_char(&mut self) -> ParserResult {
-        self.bump();
-        if self.is_eof() || self.at_whitespace() {
-            return Ok(Value::Symbol(Ident { name: "\\".into_string(), prefix: None }))
-        }
-        unimplemented!()
     }
 
     fn parse_symbol(&mut self) -> ParserResult {
-        let ident = try!(self.parse_ident());
-        if ident.prefix.is_none() {
-            Ok(match &*ident.name {
-                "nil" => Value::Nil,
-                "true" => Value::Bool(true),
-                "false" => Value::Bool(false),
-                _ => Value::Symbol(ident)
-            })
+        let name = self.get_and_bump().unwrap();
+
+        if self.eat(&Token::Slash) {
+            // prefixed symbol
+            let prefix = match name {
+                Token::Name(n) => n,
+                _ => panic!("logic error")
+            };
+            self.bump();
+            let name = match self.get_and_bump() {
+                Some(Token::Name(n)) => n,
+                Some(tok) => return Err(ParserError::UnexpectedToken {
+                    expected: "identifier",
+                    found: tok.human_readable()
+                }),
+                None => return Err(ParserError::Eof)
+            };
+            Ok(Value::Symbol(Ident::Prefixed { name: name, prefix: prefix }))
         } else {
-            Ok(Value::Symbol(ident))
+            Ok(match name {
+                Token::Name(ref n) if *n == "true" => Value::Bool(true),
+                Token::Name(ref n) if *n == "false" => Value::Bool(false),
+                Token::Name(ref n) if *n == "nil" => Value::Nil,
+                Token::Name(n) => Value::Symbol(Ident::Simple { name: n }),
+                _ => panic!("logic error")
+            })
         }
     }
 
-    fn parse_keyword(&mut self) -> ParserResult {
-        self.bump();
-        Ok(Value::Keyword(try!(self.parse_ident())))
+    fn consume_spaces(&mut self) {
+        while self.at_space() { self.bump() }
     }
 
-    pub fn parse_value(&mut self) -> ParserResult {
-        self.consume_ws();
-        if self.is_eof() { return Err(ParserError::Eof) }
+    fn parse_value(&mut self) -> ParserResult {
+        self.consume_spaces();
+        if self.is_eof() {
+            return Err(ParserError::Eof);
+        }
 
-        let ch = self.ch.unwrap();
-        if ch == '"' { return self.parse_string() }
-        if ch == '\\' { return self.parse_char() }
-        if self.at_symbol() { return self.parse_symbol() }
-        if self.at_keyword() { return self.parse_keyword() }
-
-        unimplemented!()
+        if self.at_symbol() {
+            self.parse_symbol()
+        } else if self.at_string() {
+            self.parse_string()
+        }else {
+            panic!()
+        }
     }
-}
-
-fn is_ident_start_ch(ch: char) -> bool {
-    match ch {
-        'a'...'z' | 'A'...'Z' => true,
-        '*' | '!' | '_' | '?' | '$' | '%' | '&' | '=' | '<' | '>' => true,
-        '-' | '+' | '.' => true, // can also start a number literal, watch out!
-        _ => false
-    }
-}
-
-fn is_ident_ch(ch: char) -> bool {
-    is_ident_start_ch(ch) || ch == ':' || ch == '#' || (ch >= '0' && ch <= '9')
 }
 
 #[cfg(test)]
@@ -240,38 +199,53 @@ mod test {
         assert_val!(r#" "foo" "#, Value::String("foo".into_string()));
         assert_val!(r#" "\n" "#, Value::String("\n".into_string()));
         assert_val!(r#" "\"" "#, Value::String("\"".into_string()));
-        // multi-line
         assert_val!(" \"foo\nbar\" ", Value::String("foo\nbar".into_string()));
     }
 
     #[test]
-    fn test_parse_char() {
-    }
-
-    #[test]
     fn test_parse_symbol() {
-        assert_val!("foo", Value::Symbol(Ident::simple("foo")));
-        assert_val!("foo#", Value::Symbol(Ident::simple("foo#")));
-        assert_val!("foo9", Value::Symbol(Ident::simple("foo9")));
-        assert_val!("-foo", Value::Symbol(Ident::simple("-foo")));
-        assert_val!("foo/bar", Value::Symbol(Ident::prefixed("bar", "foo")));
-        assert_err!("foo/", ParserError::InvalidToken('/'));
+        assert_val!("foo", sym_simple("foo"));
+        assert_val!("foo#", sym_simple("foo#"));
+        assert_val!("foo9", sym_simple("foo9"));
+        assert_val!("-foo", sym_simple("-foo"));
+        assert_val!("foo/bar", sym_prefixed("bar", "foo"));
+        assert_val!("foo/true", sym_prefixed("true", "foo"));
+
+        assert_err!("foo/", ParserError::Eof);
+        assert_err!(r#"foo/"bar""#, ParserError::UnexpectedToken {
+            expected: "identifier",
+            found: "string"
+        });
         // FIXME: the parser doesn't handle this correctly right now
         // assert_err!("/bar", ParserError::InvalidToken('/'));
-
-        assert_val!(r#" \ "#, Value::Symbol(Ident::simple("\\")));
 
         // tools.reader.edn parses this as a symbol
         // assert_val!("ᛰ", Value::Symbol(Ident::simple("ᛰ")));
     }
 
-    #[test]
+    // #[test]
     fn test_parse_keyword() {
         assert_err!(":", ParserError::Eof);
-        assert_err!(": foo", ParserError::InvalidToken(' '));
-        assert_val!(":foo", Value::Keyword(Ident::simple("foo")));
-        assert_val!(":-foo", Value::Keyword(Ident::simple("-foo")));
-        assert_val!(":1234", Value::Keyword(Ident::simple("1234")));
-        assert_val!(":12aaa", Value::Keyword(Ident::simple("12aaa")));
+        // assert_err!(": foo", ParserError::InvalidToken(' '));
+        assert_val!(":foo", Value::Keyword(ident_simple("foo")));
+        assert_val!(":-foo", Value::Keyword(ident_simple("-foo")));
+        assert_val!(":1234", Value::Keyword(ident_simple("1234")));
+        assert_val!(":12aaa", Value::Keyword(ident_simple("12aaa")));
+    }
+
+    fn ident_simple(x: &'static str) -> Ident {
+        Ident::Simple { name: x.into_string() }
+    }
+
+    fn ident_prefixed(x: &'static str, y: &'static str) -> Ident {
+        Ident::Prefixed { name: x.into_string(), prefix: y.into_string() }
+    }
+
+    fn sym_simple(x: &'static str) -> Value {
+        Value::Symbol(ident_simple(x))
+    }
+
+    fn sym_prefixed(x: &'static str, y: &'static str) -> Value {
+        Value::Symbol(ident_prefixed(x, y))
     }
 }

@@ -1,6 +1,6 @@
 #![feature(globs, macro_rules, phase)]
-#![deny(dead_code)]
-#![warn(missing_docs)]
+// #![deny(dead_code)]
+// #![warn(missing_docs)]
 
 //! A native Rust library for working with
 //! [EDN (Extensible Data Notation)](https://github.com/edn-format/edn).
@@ -11,45 +11,25 @@ extern crate serialize;
 // pub use parser::{ParserError, ParserResult};
 
 mod lexer;
-// mod parser;
+mod parser;
 
 /// The representation of an EDN identifier: part of a symbol or keyword.  Always has a
 /// name, but may have a prefix (typically a namespace) if written as `prefix/name`.
 ///
 // FIXME: re-enable this
 /// ```norun
+/// use edn::Ident;
 /// let val = edn::parse_str("foo").unwrap();
 /// let simple_ident = val.as_symbol().unwrap();
-/// assert_eq!(&*simple_ident.name, "foo");
-/// assert_eq!(simple_ident.prefix, None);
+/// assert_eq!(simple_ident, Ident::Simple { name: "foo".into_string() })
 /// ```
 #[deriving(PartialEq, Show)]
-pub struct Ident {
-    /// The identifier's name. If prefixed, the part after the `/`.
-    pub name: String,
-    /// If the identifier is prefixed or namespaced, the portion of the identifier
-    /// before the `/`.
-    pub prefix: Option<String>
+pub enum Ident {
+    /// A simple identifier, like `foo`
+    Simple { name: String },
+    /// A prefixed or namespaced identifier, like `foo`
+    Prefixed { name: String, prefix: String }
 }
-
-/*
-#[cfg(test)]
-impl Ident {
-    fn simple(name: &str) -> Ident {
-        Ident {
-            name: name.into_string(),
-            prefix: None
-        }
-    }
-
-    fn prefixed(name: &str, prefix: &str) -> Ident {
-        Ident {
-            name: name.into_string(),
-            prefix: Some(prefix.into_string())
-        }
-    }
-}
-*/
 
 /// An EDN value.
 #[deriving(PartialEq, Show)]
