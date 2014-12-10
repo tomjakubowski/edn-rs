@@ -329,7 +329,7 @@ mod test {
     fn test_sym() {
         // symbol-like token sequences
         assert_tokens!("foo", name("foo"));
-        assert_tokens!("-foo", name("-foo"));
+        assert_tokens!("-f#o:o", name("-f#o:o"));
         assert_tokens!("foo/bar", name("foo"), Slash, name("bar"));
         assert_tokens!("foo / bar", name("foo"), Space, Slash, Space, name("bar"));
         assert_tokens!("+", name("+"));

@@ -22,6 +22,13 @@ pub enum ParserError {
         expected: &'static str,
         /// A human-readable description of the token that was found
         found: &'static str
+    },
+    /// The parser found a mismatched pair of delimeters
+    MismatchedDelim {
+        /// The delimiter expected
+        expected: char,
+        /// The delimiter found
+        found: char
     }
 }
 
@@ -164,6 +171,39 @@ impl<T: Iterator<char>> Parser<T> {
         }
     }
 
+    fn at_vec(&self) -> bool {
+        match self.tok {
+            Some(Token::LSquare) => true,
+            _ => false
+        }
+    }
+
+    fn parse_vec(&mut self) -> ParserResult {
+        self.bump(); // advance past [
+        let mut vec = Vec::with_capacity(16);
+        loop {
+            self.consume_spaces();
+            match self.tok {
+                Some(Token::RSquare) => break,
+                Some(Token::RParen) => {
+                    return Err(ParserError::MismatchedDelim {
+                        expected: ']',
+                        found: ')'
+                    })
+                },
+                Some(Token::RCurly) => {
+                    return Err(ParserError::MismatchedDelim {
+                        expected: ']',
+                        found: '}'
+                    })
+                },
+                _ => vec.push(try!(self.parse_value()))
+            }
+        }
+        vec.shrink_to_fit();
+        Ok(Value::Vector(vec))
+    }
+
     fn consume_spaces(&mut self) {
         while self.at_space() { self.bump() }
     }
@@ -190,6 +230,8 @@ impl<T: Iterator<char>> Parser<T> {
                     found: self.tok.take().unwrap().human_readable()
                 })
             }
+        } else if self.at_vec() {
+            self.parse_vec()
         } else {
             panic!()
         }
@@ -245,11 +287,11 @@ mod test {
     #[test]
     fn test_parse_str() {
         assert_err!(r#" "foo "#, ParserError::Eof);
-        assert_val!(r#" "" "#, Value::String("".into_string()));
-        assert_val!(r#" "foo" "#, Value::String("foo".into_string()));
-        assert_val!(r#" "\n" "#, Value::String("\n".into_string()));
-        assert_val!(r#" "\"" "#, Value::String("\"".into_string()));
-        assert_val!(" \"foo\nbar\" ", Value::String("foo\nbar".into_string()));
+        assert_val!(r#" "" "#, s(""));
+        assert_val!(r#" "foo" "#, s("foo"));
+        assert_val!(r#" "\n" "#, s("\n"));
+        assert_val!(r#" "\"" "#, s("\""));
+        assert_val!(" \"foo\nbar\" ", s("foo\nbar"));
     }
 
     #[test]
@@ -286,12 +328,35 @@ mod test {
         // assert_val!(":12aaa", Value::Keyword(ident_simple("12aaa")));
     }
 
+    #[test]
+    fn test_parse_vector() {
+        assert_val!("[]", Value::Vector(vec![]));
+        assert_val!("[nil]", Value::Vector(vec![Value::Nil]));
+        assert_val!("[nil  ]", Value::Vector(vec![Value::Nil]));
+        assert_val!("[  nil  ]", Value::Vector(vec![Value::Nil]));
+        assert_val!(r#"[nil "hello"  ]"#,
+                    Value::Vector(vec![Value::Nil, s("hello")]));
+        assert_val!(r#"[nil, "hello"]"#,
+                    Value::Vector(vec![Value::Nil, s("hello")]));
+        assert_val!("[[]]", Value::Vector(vec![Value::Vector(vec![])]));
+    }
+
+    #[test]
+    fn test_mismatched_delim() {
+        assert_err!("[}", ParserError::MismatchedDelim { found: '}', expected: ']' });
+        assert_err!("[[}]", ParserError::MismatchedDelim { found: '}', expected: ']' });
+    }
+
     fn ident_simple(x: &'static str) -> Ident {
         Ident::Simple { name: x.into_string() }
     }
 
     fn ident_prefixed(x: &'static str, y: &'static str) -> Ident {
         Ident::Prefixed { name: x.into_string(), prefix: y.into_string() }
+    }
+
+    fn s(x: &'static str) -> Value {
+        Value::String(x.into_string())
     }
 
     fn sym_simple(x: &'static str) -> Value {
