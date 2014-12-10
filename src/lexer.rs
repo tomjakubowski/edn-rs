@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 macro_rules! try_getch {
     ($ch:expr) => ({
         match $ch {
@@ -39,13 +37,6 @@ impl Token {
             '[' => Token::LSquare,
             ']' => Token::RSquare,
             _ => unreachable!()
-        }
-    }
-
-    pub fn is_name(&self) -> bool {
-        match *self {
-            Token::Name(_) => true,
-            _ => false
         }
     }
 

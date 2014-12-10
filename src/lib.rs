@@ -1,6 +1,5 @@
 #![feature(globs, macro_rules, phase)]
-// #![deny(dead_code)]
-// #![warn(missing_docs)]
+#![warn(missing_docs)]
 
 //! A native Rust library for working with
 //! [EDN (Extensible Data Notation)](https://github.com/edn-format/edn).
@@ -8,7 +7,7 @@
 #[phase(plugin, link)] extern crate log;
 extern crate serialize;
 
-// pub use parser::{ParserError, ParserResult};
+pub use parser::{ParserError, ParserResult};
 
 mod lexer;
 mod parser;
@@ -26,9 +25,17 @@ mod parser;
 #[deriving(PartialEq, Show)]
 pub enum Ident {
     /// A simple identifier, like `foo`
-    Simple { name: String },
+    Simple {
+        /// The identifier
+        name: String
+    },
     /// A prefixed or namespaced identifier, like `foo`
-    Prefixed { name: String, prefix: String }
+    Prefixed {
+        /// The identifier's name, after the `/`
+        name: String,
+        /// The identifier's prefix, before the `/`
+        prefix: String
+    }
 }
 
 /// An EDN value.
@@ -91,7 +98,6 @@ pub type EdnList = Vec<Value>;
 /// Rust representation of an EDN vector.
 pub type EdnVec = Vec<Value>;
 
-/*
 /// Parses an input `&str` and returns the result as a single EDN value or any parser
 /// errors encountered.
 pub fn parse_str(input: &str) -> ParserResult {
@@ -104,5 +110,3 @@ pub fn parse_chars<T: Iterator<char>>(input: T) -> ParserResult {
     let mut parser = parser::Parser::new(input);
     parser.parse_value()
 }
-
-*/

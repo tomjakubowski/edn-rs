@@ -11,13 +11,18 @@ macro_rules! one_of {
     };
 }
 
-#[deriving(PartialEq, Show)]
+#[deriving(Copy, PartialEq, Show)]
 /// Possible errors encountered when parsing EDN.
 pub enum ParserError {
     /// The parser reached the end of the input unexpectedly.
     Eof,
     /// The parser read an unexpected token
-    UnexpectedToken { expected: &'static str, found: &'static str }
+    UnexpectedToken {
+        /// A human-readable description of the expected token
+        expected: &'static str,
+        /// A human-readable description of the token that was found
+        found: &'static str
+    }
 }
 
 impl Error for ParserError {
@@ -130,7 +135,7 @@ impl<T: Iterator<char>> Parser<T> {
         while self.at_space() { self.bump() }
     }
 
-    fn parse_value(&mut self) -> ParserResult {
+    pub fn parse_value(&mut self) -> ParserResult {
         self.consume_spaces();
         if self.is_eof() {
             return Err(ParserError::Eof);
