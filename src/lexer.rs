@@ -105,6 +105,10 @@ fn is_letter(ch: char) -> bool {
     (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z')
 }
 
+fn is_alphanumeric(ch: char) -> bool {
+    is_letter(ch) || is_digit(ch)
+}
+
 fn is_name_start1(ch: char) -> bool {
     (one_of!(ch: '!', '*', '?', '_', '$', '%', '&', '=', '<', '>') || is_letter(ch))
 }
@@ -202,6 +206,8 @@ impl<T: Iterator<char>> Lexer<T> {
     }
 
     fn read_number(&mut self) -> Option<Token> {
+        static DIGITS: &'static str = "0123456789";
+
         match self.peek() {
             None => {
                 return self.read_name2()
@@ -215,10 +221,23 @@ impl<T: Iterator<char>> Lexer<T> {
         let mut num = String::with_capacity(16);
         // optional leading sign
         self.accept("+-", &mut num);
-        while self.accept("0123456789", &mut num) {}
-        // optional arbitrary precision
-        self.accept("N", &mut num);
-        Some(Token::Number(num))
+        while self.accept(DIGITS, &mut num) {}
+        if self.accept(".", &mut num) {
+            while self.accept(DIGITS, &mut num) {}
+        }
+        if self.accept("eE", &mut num) {
+            self.accept("+-", &mut num);
+            while self.accept(DIGITS, &mut num) {}
+        }
+        // optional arbitrary/exact precision
+        self.accept("MN", &mut num);
+        match self.ch {
+            Some(ch) if is_alphanumeric(ch) => {
+                panic!("uh oh (found alphanumeric at end of number literal)");
+            }
+            _ => Some(Token::Number(num))
+        }
+
     }
 
     fn read_name1(&mut self) -> Option<Token> {
@@ -388,6 +407,12 @@ mod test {
         assert_tokens!("123N", num("123N"));
         assert_tokens!("0123", num("0123")); // illegal, but let the parser DWI
         assert_tokens!("{12 34}", LCurly, num("12"), Space, num("34"), RCurly);
+        assert_tokens!("1.2", num("1.2"));
+        assert_tokens!("1.2e34", num("1.2e34"));
+        assert_tokens!("1.2E34", num("1.2E34"));
+        assert_tokens!("1.2e-10", num("1.2e-10"));
+        assert_tokens!("1.2e-10M", num("1.2e-10M"));
+        assert_tokens!("1.2M", num("1.2M"));
     }
 
     #[test]
