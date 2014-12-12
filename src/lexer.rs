@@ -49,6 +49,13 @@ impl Token {
         }
     }
 
+    pub fn is_closing_delim(&self) -> bool {
+        match *self {
+            Token::RCurly | Token::RParen | Token::RSquare => true,
+            _ => false
+        }
+    }
+
     pub fn human_readable(&self) -> &'static str {
         match *self {
             Token::LCurly => "`{`",

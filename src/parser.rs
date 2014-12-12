@@ -26,9 +26,9 @@ pub enum ParserError {
     /// The parser found a mismatched pair of delimeters
     MismatchedDelim {
         /// The delimiter expected
-        expected: char,
+        expected: &'static str,
         /// The delimiter found
-        found: char
+        found: &'static str
     }
 }
 
@@ -178,30 +178,44 @@ impl<T: Iterator<char>> Parser<T> {
         }
     }
 
-    fn parse_vec(&mut self) -> ParserResult {
-        self.bump(); // advance past [
+    fn at_list(&self) -> bool {
+        match self.tok {
+            Some(Token::LParen) => true,
+            _ => false
+        }
+    }
+
+    fn parse_sequence(&mut self, close: &Token) -> Result<Vec<Value>, ParserError> {
+        self.bump(); // advance past opening delim
         let mut vec = Vec::with_capacity(16);
         loop {
             self.consume_spaces();
             match self.tok {
-                Some(Token::RSquare) => break,
-                Some(Token::RParen) => {
-                    return Err(ParserError::MismatchedDelim {
-                        expected: ']',
-                        found: ')'
-                    })
-                },
-                Some(Token::RCurly) => {
-                    return Err(ParserError::MismatchedDelim {
-                        expected: ']',
-                        found: '}'
-                    })
-                },
+                Some(ref tok) if tok.is_closing_delim() => {
+                    if tok == close {
+                        break
+                    } else {
+                        return Err(ParserError::MismatchedDelim {
+                            expected: close.human_readable(),
+                            found: tok.human_readable()
+                        })
+                    }
+                }
                 _ => vec.push(try!(self.parse_value()))
             }
         }
         vec.shrink_to_fit();
+        Ok(vec)
+    }
+
+    fn parse_vec(&mut self) -> ParserResult {
+        let vec = try!(self.parse_sequence(&Token::RSquare));
         Ok(Value::Vector(vec))
+    }
+
+    fn parse_list(&mut self) -> ParserResult {
+        let vec = try!(self.parse_sequence(&Token::RParen));
+        Ok(Value::List(vec))
     }
 
     fn consume_spaces(&mut self) {
@@ -232,8 +246,10 @@ impl<T: Iterator<char>> Parser<T> {
             }
         } else if self.at_vec() {
             self.parse_vec()
+        } else if self.at_list() {
+            self.parse_list()
         } else {
-            panic!()
+            panic!("unknown token at this state: {}", self.tok)
         }
     }
 }
@@ -262,7 +278,7 @@ mod test {
             let mut parser = Parser::new(inp.chars());
             match parser.parse_value() {
                 Err($pat) => {},
-                x => { panic!("error assert failed, parsed value of {} was {}",
+                x => { panic!("error assert failed, parse_value({}) was {}",
                               stringify!($str), x) }
             }
         })
@@ -349,9 +365,21 @@ mod test {
     }
 
     #[test]
+    fn test_parse_list() {
+        assert_val!("()", Value::List(vec![]));
+        assert_val!("(nil)", Value::List(vec![Value::Nil]));
+        assert_val!("((nil,))", Value::List(
+                vec![Value::List(vec![Value::Nil])]
+        ));
+    }
+
+    #[test]
     fn test_mismatched_delim() {
-        assert_err!("[}", ParserError::MismatchedDelim { found: '}', expected: ']' });
-        assert_err!("[[}]", ParserError::MismatchedDelim { found: '}', expected: ']' });
+        assert_err!("[}", ParserError::MismatchedDelim { found: "`}`", expected: "`]`" });
+        assert_err!("[[}]", ParserError::MismatchedDelim {
+            found: "`}`",
+            expected: "`]`"
+        });
     }
 
     fn ident_simple(x: &'static str) -> Ident {
