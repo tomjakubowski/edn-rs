@@ -136,6 +136,7 @@ impl<T: Iterator<char>> Parser<T> {
             self.bump();
             let name = match self.get_and_bump() {
                 Some(Token::Name(n)) => n,
+                Some(Token::Slash) => "/".into_string(),
                 Some(tok) => return Err(ParserError::UnexpectedToken {
                     expected: "identifier",
                     found: tok.human_readable()
@@ -196,7 +197,7 @@ impl<T: Iterator<char>> Parser<T> {
                 }
                 Ok(Value::Float(FromStr::from_str(s.as_slice()).unwrap()))
             },
-            _ => unreachable!()
+            _ => panic!("logic error")
         }
     }
 
@@ -364,6 +365,7 @@ mod test {
         assert_val!("-foo", sym_simple("-foo"));
         assert_val!("foo/bar", sym_prefixed("bar", "foo"));
         assert_val!("foo/true", sym_prefixed("true", "foo"));
+        assert_val!("foo//", sym_prefixed("/", "foo"));
         assert_val!("/ foo", sym_simple("/"))
 
         assert_err!("foo/", ParserError::Eof);
@@ -418,7 +420,10 @@ mod test {
 
     #[test]
     fn test_mismatched_delim() {
-        assert_err!("[}", ParserError::MismatchedDelim { found: "`}`", expected: "`]`" });
+        assert_err!("[}", ParserError::MismatchedDelim {
+            found: "`}`",
+            expected: "`]`"
+        });
         assert_err!("[[}]", ParserError::MismatchedDelim {
             found: "`}`",
             expected: "`]`"
