@@ -257,10 +257,14 @@ mod test {
             let mut parser = Parser::new(inp.chars());
             assert!(parser.parse_value().is_err())
         });
-        ($str:expr, $val:expr) => ({
+        ($str:expr, $pat:pat) => ({
             let inp = $str.into_string();
             let mut parser = Parser::new(inp.chars());
-            assert_eq!(parser.parse_value(), Err($val))
+            match parser.parse_value() {
+                Err($pat) => {},
+                x => { panic!("error assert failed, parsed value of {} was {}",
+                              stringify!($str), x) }
+            }
         })
     }
 
@@ -307,11 +311,11 @@ mod test {
         assert_err!("foo/", ParserError::Eof);
         assert_err!("/foo", ParserError::UnexpectedToken {
             expected: "<whitespace>",
-            found: "identifier"
+            ..
         });
         assert_err!(r#"foo/"bar""#, ParserError::UnexpectedToken {
             expected: "identifier",
-            found: "string"
+            ..
         });
 
         // tools.reader.edn parses this as a symbol
@@ -321,7 +325,10 @@ mod test {
     #[test]
     fn test_parse_keyword() {
         assert_err!(":", ParserError::Eof);
-        // assert_err!(": foo", ParserError::InvalidToken(' '));
+        assert_err!(": foo", ParserError::UnexpectedToken {
+            expected: "identifier",
+            ..
+        });
         assert_val!(":foo", Value::Keyword(ident_simple("foo")));
         assert_val!(":-foo", Value::Keyword(ident_simple("-foo")));
         // assert_val!(":1234", Value::Keyword(ident_simple("1234")));
