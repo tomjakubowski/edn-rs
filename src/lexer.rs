@@ -432,6 +432,7 @@ mod test {
         assert_tokens!("123N", i("123N"));
         // assert_tokens!("0123", num("0123")); // illegal FIXME: reenable with err
         assert_tokens!("{12 34}", LCurly, i("12"), Space, i("34"), RCurly);
+        assert_tokens!("(+ 34)", LParen, name("+"), Space, i("34"), RParen);
         assert_tokens!("1.2", float("1.2"));
         assert_tokens!("1.2e34", float("1.2e34"));
         assert_tokens!("1.2E34", float("1.2E34"));

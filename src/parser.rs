@@ -181,7 +181,7 @@ impl<T: Iterator<char>> Parser<T> {
 
     fn parse_number(&mut self) -> ParserResult {
         use std::str::FromStr;
-        let num = self.tok.take().unwrap();
+        let num = self.get_and_bump().unwrap();
 
         match num {
             Token::Int(ref s) => {
@@ -219,6 +219,7 @@ impl<T: Iterator<char>> Parser<T> {
         let mut vec = Vec::with_capacity(16);
         loop {
             self.consume_spaces();
+            debug!("parse_sequence: {}", self.tok);
             match self.tok {
                 Some(ref tok) if tok.is_closing_delim() => {
                     if tok == close {
