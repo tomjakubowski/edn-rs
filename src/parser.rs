@@ -397,6 +397,7 @@ mod test {
     fn test_parse_vector() {
         assert_val!("[]", Value::Vector(vec![]));
         assert_val!("[nil]", Value::Vector(vec![Value::Nil]));
+        assert_val!("[5]", Value::Vector(vec![Value::Integer(5)]));
         assert_val!("[nil  ]", Value::Vector(vec![Value::Nil]));
         assert_val!("[  nil  ]", Value::Vector(vec![Value::Nil]));
         assert_val!(r#"[nil "hello"  ]"#,
