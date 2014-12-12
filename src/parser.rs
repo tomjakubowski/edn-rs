@@ -107,6 +107,14 @@ impl<T: Iterator<char>> Parser<T> {
         }
     }
 
+    fn at_number(&self) -> bool {
+        match self.tok {
+            Some(Token::Float(_)) => true,
+            Some(Token::Int(_)) => true,
+            _ => false
+        }
+    }
+
     fn parse_string(&mut self) -> ParserResult {
         let s = self.get_and_bump().unwrap();
         match s {
@@ -168,6 +176,27 @@ impl<T: Iterator<char>> Parser<T> {
                 expected: "identifier",
                 found: self.tok.take().unwrap().human_readable()
             })
+        }
+    }
+
+    fn parse_number(&mut self) -> ParserResult {
+        use std::str::FromStr;
+        let num = self.tok.take().unwrap();
+
+        match num {
+            Token::Int(ref s) => {
+                if s.as_slice().ends_with("N") {
+                    panic!("arbitrary precision integers not yet implemented");
+                }
+                Ok(Value::Integer(FromStr::from_str(s.as_slice()).unwrap()))
+            },
+            Token::Float(ref s) => {
+                if s.as_slice().ends_with("M") {
+                    panic!("exact precision floats not yet implemented");
+                }
+                Ok(Value::Float(FromStr::from_str(s.as_slice()).unwrap()))
+            },
+            _ => unreachable!()
         }
     }
 
@@ -234,6 +263,8 @@ impl<T: Iterator<char>> Parser<T> {
             self.parse_keyword()
         } else if self.at_string() {
             self.parse_string()
+        } else if self.at_number() {
+            self.parse_number()
         } else if self.eat(&Token::Slash) {
             self.bump();
             if self.at_space() || self.is_eof() {
@@ -315,6 +346,16 @@ mod test {
     }
 
     #[test]
+    fn test_parse_num() {
+        assert_val!("0", i(0));
+        assert_val!("-1", i(-1));
+        assert_val!("1234", i(1234));
+        assert_val!("1.234", float(1.234));
+        assert_val!("1e23", float(1e23));
+        assert_val!("-1e23", float(-1e23));
+    }
+
+    #[test]
     fn test_parse_symbol() {
         assert_val!("foo", sym_simple("foo"));
         assert_val!("foo#", sym_simple("foo#"));
@@ -392,6 +433,14 @@ mod test {
 
     fn s(x: &'static str) -> Value {
         Value::String(x.into_string())
+    }
+
+    fn i(x: i64) -> Value {
+        Value::Integer(x)
+    }
+
+    fn float(x: f64) -> Value {
+        Value::Float(x)
     }
 
     fn sym_simple(x: &'static str) -> Value {

@@ -26,7 +26,8 @@ pub enum Token {
     Slash,
     Space,
     Colon,
-    Number(String),
+    Float(String),
+    Int(String),
     Name(String),
     String(String),
 }
@@ -70,7 +71,8 @@ impl Token {
             Token::Slash => "`/`",
             Token::Colon => "`:`",
             Token::Space => "<whitespace>",
-            Token::Number(_) => "number",
+            Token::Float(_) => "float literal",
+            Token::Int(_) => "integer literal",
             Token::Name(_) => "identifier",
             Token::String(_) => "string"
         }
@@ -208,34 +210,53 @@ impl<T: Iterator<char>> Lexer<T> {
     fn read_number(&mut self) -> Option<Token> {
         static DIGITS: &'static str = "0123456789";
 
-        match self.peek() {
-            None => {
-                return self.read_name2()
-            }
-            Some(ch) => {
-                if !is_digit(ch) && ch != '.' && ch != 'M' && ch != 'N' {
-                    return self.read_name2()
+        // ugh
+        let cur = self.ch.unwrap();
+        if !is_digit(cur) {
+            match self.peek() {
+                None => return self.read_name2(),
+                Some(ch) => {
+                    if !is_digit(ch) && ch != '.' && ch != 'M' && ch != 'N' {
+                        return self.read_name2()
+                    }
                 }
             }
-        };
+        }
+
         let mut num = String::with_capacity(16);
+        let mut is_float = false;
+
         // optional leading sign
         self.accept("+-", &mut num);
-        while self.accept(DIGITS, &mut num) {}
+        if !self.accept("0", &mut num) {
+            while self.accept(DIGITS, &mut num) {}
+        }
         if self.accept(".", &mut num) {
+            is_float = true;
             while self.accept(DIGITS, &mut num) {}
         }
         if self.accept("eE", &mut num) {
             self.accept("+-", &mut num);
+            is_float = true;
             while self.accept(DIGITS, &mut num) {}
         }
         // optional arbitrary/exact precision
-        self.accept("MN", &mut num);
+        if self.accept("M", &mut num) {
+            is_float = true;
+            // FIXME: exact precision
+        } else if self.accept("N", &mut num) && !is_float {
+            // FIXME: arbitrary precision
+        }
+
         match self.ch {
             Some(ch) if is_alphanumeric(ch) => {
                 panic!("uh oh (found alphanumeric at end of number literal)");
             }
-            _ => Some(Token::Number(num))
+            _ => if is_float {
+                Some(Token::Float(num))
+            } else {
+                Some(Token::Int(num))
+            }
         }
 
     }
@@ -369,8 +390,12 @@ mod test {
         Token::Name(x.into_string())
     }
 
-    fn num(x: &'static str) -> Token {
-        Token::Number(x.into_string())
+    fn float(x: &'static str) -> Token {
+        Token::Float(x.into_string())
+    }
+
+    fn i(x: &'static str) -> Token {
+        Token::Int(x.into_string())
     }
 
     #[test]
@@ -401,18 +426,19 @@ mod test {
 
     #[test]
     fn test_num() {
-        assert_tokens!("+123", num("+123"));
-        assert_tokens!("-123", num("-123"));
-        assert_tokens!("123", num("123"));
-        assert_tokens!("123N", num("123N"));
-        assert_tokens!("0123", num("0123")); // illegal, but let the parser DWI
-        assert_tokens!("{12 34}", LCurly, num("12"), Space, num("34"), RCurly);
-        assert_tokens!("1.2", num("1.2"));
-        assert_tokens!("1.2e34", num("1.2e34"));
-        assert_tokens!("1.2E34", num("1.2E34"));
-        assert_tokens!("1.2e-10", num("1.2e-10"));
-        assert_tokens!("1.2e-10M", num("1.2e-10M"));
-        assert_tokens!("1.2M", num("1.2M"));
+        assert_tokens!("+123", i("+123"));
+        assert_tokens!("-123", i("-123"));
+        assert_tokens!("123", i("123"));
+        assert_tokens!("123N", i("123N"));
+        // assert_tokens!("0123", num("0123")); // illegal FIXME: reenable with err
+        assert_tokens!("{12 34}", LCurly, i("12"), Space, i("34"), RCurly);
+        assert_tokens!("1.2", float("1.2"));
+        assert_tokens!("1.2e34", float("1.2e34"));
+        assert_tokens!("1.2E34", float("1.2E34"));
+        assert_tokens!("1.2e-10", float("1.2e-10"));
+        assert_tokens!("1.2e-10M", float("1.2e-10M"));
+        assert_tokens!("1.2M", float("1.2M"));
+        assert_tokens!("0M", float("0M"));
     }
 
     #[test]
@@ -426,6 +452,7 @@ mod test {
         assert_tokens!("+abc", name("+abc"));
         assert_tokens!("<foo>", name("<foo>"));
         assert_tokens!(">>=", name(">>="));
+        assert_tokens!("NaN", name("NaN"));
 
         // vvv should be rejected by parser
         assert_tokens!("foo/ bar", name("foo"), Slash, Space, name("bar"));
