@@ -208,7 +208,7 @@ impl<T: Iterator<char>> Lexer<T> {
     }
 
     fn read_number(&mut self) -> Option<Token> {
-        static DIGITS: &'static str = "0123456789";
+        const DIGITS: &'static str = "0123456789";
 
         // ugh
         let cur = self.ch.unwrap();
