@@ -5,12 +5,6 @@ use std::error::Error;
 use {Ident, Value};
 use lexer::{Lexer, Token};
 
-macro_rules! one_of {
-    ($x:expr: $($val:expr),+) => {
-        $($x == $val)||+
-    };
-}
-
 #[deriving(Copy, PartialEq, Show)]
 /// Possible errors encountered when parsing EDN.
 pub enum ParserError {
