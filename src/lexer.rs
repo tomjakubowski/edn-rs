@@ -1,3 +1,5 @@
+use std::iter::Peekable;
+
 macro_rules! try_getch {
     ($ch:expr) => ({
         match $ch {
@@ -24,6 +26,7 @@ pub enum Token {
     Slash,
     Space,
     Colon,
+    Number(String),
     Name(String),
     String(String),
 }
@@ -67,6 +70,7 @@ impl Token {
             Token::Slash => "`/`",
             Token::Colon => "`:`",
             Token::Space => "<whitespace>",
+            Token::Number(_) => "number",
             Token::Name(_) => "identifier",
             Token::String(_) => "string"
         }
@@ -87,6 +91,10 @@ fn is_delim(ch: char) -> bool {
 
 fn is_digit(ch: char) -> bool {
     ch >= '0' && ch <= '9'
+}
+
+fn is_num_start(ch: char) -> bool {
+    ch == '+' || ch == '-' || is_digit(ch)
 }
 
 fn is_string_escape(ch: char) -> bool {
@@ -112,12 +120,12 @@ fn is_name_constituent(ch: char) -> bool {
 /// Converts a stream of `char` values into a stream of terminal `Token` values.
 pub struct Lexer<T: Iterator<char>> {
     ch: Option<char>,
-    inp: T,
-    // TODO: savagely optimize by building up tokens here
+    inp: Peekable<char, T>,
 }
 
 impl<T: Iterator<char>> Lexer<T> {
-    pub fn new(mut inp: T) -> Lexer<T> {
+    pub fn new(inp: T) -> Lexer<T> {
+        let mut inp = inp.peekable();
         Lexer {
             ch: inp.next(),
             inp: inp,
@@ -132,6 +140,20 @@ impl<T: Iterator<char>> Lexer<T> {
         let ch = self.ch.unwrap();
         self.bump();
         ch
+    }
+
+    fn peek(&mut self) -> Option<char> {
+        self.inp.peek().map(|&x| x)
+    }
+
+    fn accept(&mut self, x: &str, buf: &mut String) -> bool {
+        match self.ch {
+            Some(ch) if x.contains_char(ch) => {
+                buf.push(self.get_and_bump());
+                true
+            },
+            _ => false
+        }
     }
 
     fn at_whitespace(&self) -> bool {
@@ -177,6 +199,26 @@ impl<T: Iterator<char>> Lexer<T> {
             self.bump()
         }
         Some(Token::String(val))
+    }
+
+    fn read_number(&mut self) -> Option<Token> {
+        match self.peek() {
+            None => {
+                return self.read_name2()
+            }
+            Some(ch) => {
+                if !is_digit(ch) && ch != '.' && ch != 'M' && ch != 'N' {
+                    return self.read_name2()
+                }
+            }
+        };
+        let mut num = String::with_capacity(16);
+        // optional leading sign
+        self.accept("+-", &mut num);
+        while self.accept("0123456789", &mut num) {}
+        // optional arbitrary precision
+        self.accept("N", &mut num);
+        Some(Token::Number(num))
     }
 
     fn read_name1(&mut self) -> Option<Token> {
@@ -249,9 +291,11 @@ impl<T: Iterator<char>> Iterator<Token> for Lexer<T> {
         } else if ch == ':' {
             self.bump();
             Some(Token::Colon)
-        }else if is_delim(ch) {
+        } else if is_delim(ch) {
             self.bump();
             Some(Token::delim(ch))
+        } else if is_num_start(ch) {
+            self.read_number()
         } else if is_name_start1(ch) {
             self.read_name1()
         } else if is_name_start2(ch) {
@@ -306,6 +350,10 @@ mod test {
         Token::Name(x.into_string())
     }
 
+    fn num(x: &'static str) -> Token {
+        Token::Number(x.into_string())
+    }
+
     #[test]
     fn test_eof() {
         assert_eof!("");
@@ -330,6 +378,16 @@ mod test {
         assert_tokens!(r#""foo\nbar""#, s("foo\nbar"));
         assert_tokens!(r#""foo\tbar""#, s("foo\tbar"));
         assert_tokens!(r#""foo\rbar""#, s("foo\rbar"));
+    }
+
+    #[test]
+    fn test_num() {
+        assert_tokens!("+123", num("+123"));
+        assert_tokens!("-123", num("-123"));
+        assert_tokens!("123", num("123"));
+        assert_tokens!("123N", num("123N"));
+        assert_tokens!("0123", num("0123")); // illegal, but let the parser DWI
+        assert_tokens!("{12 34}", LCurly, num("12"), Space, num("34"), RCurly);
     }
 
     #[test]
